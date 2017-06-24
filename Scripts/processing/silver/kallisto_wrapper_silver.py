@@ -12,6 +12,7 @@ from sys import argv
 import math
 import glob
 import os
+import subprocess
 
 split = int(argv[1])
 contributors = int(argv[2])
@@ -20,22 +21,13 @@ contributors = int(argv[2])
 
 with open('/tigress/BEE/RNAseq/Scripts/processing/silver/checkpoints/v6p_samples.txt', 'r') as f:
     samples_to_do = [line.strip() for line in f]
-
-# with open('/tigress/BEE/RNAseq/Scripts/processing/silver/checkpoints/kallisto_hg38_samples.txt', 'r') as f:
-#     samples_done = [line.strip() for line in f]
-
-# Check for completed samples:
-kallisto_dir = '/tigress/BEE/gtex/data/phenotype/expression/mapped_rna_seq_reads/silver/kallisto_hg38/'
-directories = glob.glob(kallisto_dir + '*')
-# modify later
-samples_done = [x for x in directories if 'abundance.h5' in os.listdir(x + '/')]
-samples_done = [str.split(x, '/')[-1] for x in samples_done]
-
-with open('/tigress/BEE/RNAseq/Scripts/processing/silver/checkpoints/kallisto_hg38_samples.txt', 'w') as f:
-    [f.write(x + '\n') for x in samples_done]
     f.close()
 
-samples_to_do = [sample for sample in samples_to_do if sample not in set(samples_done)]
+with open('/tigress/BEE/RNAseq/Scripts/processing/silver/checkpoints/kallisto_hg38_bootstrap_samples.txt', 'r') as f:
+    samples_done = [line.strip() for line in f]
+    f.close()
+
+samples_to_do = [sample for sample in samples_to_do if sample not in set(bootstrap_samples_done)]
 samples_to_do_split = [samples_to_do[x:x+split] for x in range(0, len(samples_to_do), split)]
 jobs_per_contrib = math.ceil(len(samples_to_do_split) / contributors)
 print(jobs_per_contrib)
