@@ -24,7 +24,7 @@ with open('/tigress/BEE/RNAseq/Scripts/processing/silver/checkpoints/v6p_samples
     f.close()
 
 with open('/tigress/BEE/RNAseq/Scripts/processing/silver/checkpoints/kallisto_hg38_bootstrap_samples.txt', 'r') as f:
-    samples_done = [line.strip() for line in f]
+    bootstrap_samples_done = [line.strip() for line in f]
     f.close()
 
 samples_to_do = [sample for sample in samples_to_do if sample not in set(bootstrap_samples_done)]

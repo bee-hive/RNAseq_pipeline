@@ -12,8 +12,6 @@ from sys import argv
 import math
 import glob
 import os
-import pwd
-import subprocess
 
 split = int(argv[1])
 contributors = int(argv[2])
