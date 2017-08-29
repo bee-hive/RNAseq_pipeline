@@ -17,7 +17,7 @@
 args <-commandArgs(TRUE)
 proj_dir = Sys.getenv('proj')
 
-# # Example
+# Example
 # args = c(1:7)
 # args[1] = '/tigress/BEE/RNAseq/Data/Expression/gtex/hg19/GTEx_phs000424_v6p/normalized/wholeblood_v6p_consortium_autosomes_normalized.txt'
 # args[2] = '8'
@@ -91,14 +91,33 @@ gene_positions = gene_positions[rownames(expression_matrix),]
 
 # Incorporate a tissue-specific MAF filter so that we are not testing variants that actually have a low MAF in our test set
 MAF = rowSums(genotype_matrix)/dim(genotype_matrix)[2]/2
-genotype_matrix = genotype_matrix[MAF>0.05 & MAF<0.95,]
-snp_positions = snp_positions[MAF>0.05 & MAF<0.95,]
+MAF = sapply(MAF, function(x) {min(x, 1-x)})
+genotype_matrix = genotype_matrix[MAF>0.05,]
+snp_positions = snp_positions[MAF>0.05,]
+MAF = MAF[MAF>0.05]
 
 # Load in the covariates
 suffix = '_Analysis.covariates.txt'
 covars = read.csv(paste0(cov_dir, tissue_name, suffix), header = TRUE, sep = '\t', stringsAsFactors = FALSE)
 rownames(covars) = covars$ID
 covars = covars[,colnames(expression_matrix)]
+
+print('finished loading data files')
+
+# Load the SNP metadata file
+metadata_file = paste('/tigress/BEE/RNAseq/Data/Genotype/gtex/SNP_metadata/GTEx_Analysis_2015-01-12_OMNI_2.5M_5M_450Indiv_allchr_genot_imput.chr',chr_number,'.metadata.txt',sep='')
+snp_metadata = read.table(metadata_file, header=TRUE, stringsAsFactors=FALSE, sep='\t')
+snp_metadata = snp_metadata[!duplicated(snp_metadata$dbSNPID),]
+rownames(snp_metadata) = snp_metadata$dbSNPID
+snp_metadata = snp_metadata[snp_metadata$dbSNPID %in% rownames(genotype_matrix),]
+snp_metadata = snp_metadata[rownames(genotype_matrix),]
+# record MAF
+snp_metadata$MAF = MAF[snp_metadata$dbSNPID]
+# record TSS
+gene_pos_subset = gene_positions[gene_positions$chr == paste0('chr', snp_metadata$CHROM[1]),]
+snp_metadata$TSS = sapply(snp_metadata$POS, function(x) {min(abs(gene_pos_subset$start - x))})
+
+print('finished loading SNP metadata')
 
 # Import MatrixEQTL
 library(MatrixEQTL)
@@ -111,6 +130,7 @@ gene_set_size = dim(expression_matrix)[1]
 # Prepare subsetting runs
 # First prepare the cis subsetting:
 cis_subset_dir = paste0(proj_dir, '/Data/Genotype/gtex/imputed_genotypes/allelic_dosage/continuous/subset_SNPs/cis-best-subset/')
+
 if (file.exists(paste0(cis_subset_dir, tissue_name, '_part', part_number, '.txt'))) {
 	cis_best_snp = read.table(paste0(cis_subset_dir, tissue_name, '_part', part_number, '.txt'), sep='\t', header=T, stringsAsFactors=F)
 } else {
@@ -119,11 +139,7 @@ if (file.exists(paste0(cis_subset_dir, tissue_name, '_part', part_number, '.txt'
 	cis_eqtl_files = list.files(path = fastqtl_dir, pattern = suffix)
 	ind = which(as.character(sapply(cis_eqtl_files, function(x) {tolower(gsub(" ", "", gsub("[[:punct:]]", "", strsplit(x, suffix)[[1]][1])))})) == tissue_name)
 
-	snpgene_df = read.table(gzfile(paste('/tigress/BEE/RNAseq/Data/Resources/gtex/dbGaP/GTEx_phs000424/v6p_fastQTL_FOR_QC_ONLY/', cis_eqtl_files[ind], sep='')), header=TRUE, stringsAsFactors=FALSE, sep='\t')
-	metadata_file = paste('/tigress/BEE/RNAseq/Data/Genotype/gtex/SNP_metadata/GTEx_Analysis_2015-01-12_OMNI_2.5M_5M_450Indiv_allchr_genot_imput.chr',chr_number,'.metadata.txt',sep='')
-	snp_metadata = read.table(metadata_file, header=TRUE, stringsAsFactors=FALSE, sep='\t')
-
-	snp_metadata = snp_metadata[snp_metadata$dbSNPID %in% rownames(genotype_matrix),]
+	snpgene_df = read.table(gzfile(paste(fastqtl_dir, cis_eqtl_files[ind], sep='')), header=TRUE, stringsAsFactors=FALSE, sep='\t')
 	snpgene_df = snpgene_df[(snpgene_df$variant_id %in% snp_metadata$ID),]
 
 	unique_genes = unique(snpgene_df$gene_id)
@@ -139,9 +155,15 @@ if (file.exists(paste0(cis_subset_dir, tissue_name, '_part', part_number, '.txt'
 	rownames(snp_metadata) = snp_metadata$ID
 	cis_best_snp$dbSNPID = snp_metadata[cis_best_snp$variant_id,]$dbSNPID
 	cis_best_snp = cis_best_snp[(!duplicated(cis_best_snp$dbSNPID)),]
+	rownames(snp_metadata) = snp_metadata$dbSNPID
+	
+	cis_best_snp$MAF = MAF[cis_best_snp$dbSNPID]
+	cis_best_snp$position = as.numeric(sapply(cis_best_snp$variant_id, function(x) {strsplit(x, '_')[[1]][2]}))
 
 	write.table(cis_best_snp, file = paste0(cis_subset_dir, tissue_name, '_part', part_number, '.txt'), sep='\t', quote=F, row.names=F)
 }
+
+print('cis-subsetting tests')
 
 genotype_subset = genotype_matrix[cis_best_snp$dbSNPID,]
 snp_position_subset = snp_positions[cis_best_snp$dbSNPID,]
@@ -149,20 +171,60 @@ cis_subset_size = nrow(cis_best_snp)
 
 me_cis = MatrixEQTL_wrapper(genotype_subset, expression_matrix, snp_position_subset, gene_positions, pvThresh = pvOutputThreshold, pvThresh_cis = pvOutputThreshold, cis_dist = cis_dist, covariates = covars)
 
+# get the random-matched subset for cis-variants:
+cis_subset_dir = paste0(proj_dir, '/Data/Genotype/gtex/imputed_genotypes/allelic_dosage/continuous/subset_SNPs/cis-best-subset-random/')
+
+if (file.exists(paste0(cis_subset_dir, tissue_name, '_part', part_number, '.txt'))) {
+	cis_best_snp_random = read.table(paste0(cis_subset_dir, tissue_name, '_part', part_number, '.txt'), sep='\t', header=T, stringsAsFactors=F)
+} else {
+	# selection scheme - for each test SNP, select random SNP that is matched in TSS and MAF, while not being too close to any of the other SNPs
+	cis_best_snp_random = vector('list', nrow(cis_best_snp))
+	for (i in c(1:nrow(cis_best_snp))) {
+		# try to match - let's say 1000 bp and 0.01 in MAF
+		tss_match = which(abs(snp_metadata$TSS - abs(cis_best_snp$tss_distance[i])) < 1000)
+		maf_match = which(abs(snp_metadata$MAF - cis_best_snp$MAF[i]) < 0.01)
+		both_match = intersect(tss_match, maf_match)
+		# if too stringent, relax a little bit
+		if (length(both_match) == 0) {
+			tss_match = which(abs(snp_metadata$TSS - abs(cis_best_snp$tss_distance[i])) < 5000)
+			maf_match = which(abs(snp_metadata$MAF - cis_best_snp$MAF[i]) < 0.03)
+			both_match = intersect(tss_match, maf_match)
+		}
+		# if still too stringent, skip
+		if (length(both_match) == 0) {next}
+		# not in LD with any of the snps being tested - let's say 10000 bp
+		snp_metadata_subset = snp_metadata[both_match,]
+		snp_metadata_subset = snp_metadata_subset[sapply(snp_metadata_subset$POS, function(x) {sum(abs(cis_best_snp$position - x) < 10000) == 0}),]
+		# if still too stringent, skip
+		if (nrow(snp_metadata_subset) == 0) {next}
+		# now randomly select
+		set.seed = 42
+		cis_best_snp_random[[i]] = snp_metadata_subset[sample(nrow(snp_metadata_subset), 1),]
+	}
+
+	cis_best_snp_random = do.call("rbind", cis_best_snp_random[!duplicated(sapply(cis_best_snp_random, function(x) {x$dbSNPID}))])
+	write.table(cis_best_snp_random, file = paste0(cis_subset_dir, tissue_name, '_part', part_number, '.txt'), sep='\t', quote=F, row.names=F)
+}
+
+print('cis-subsetting tests, matched random')
+
+genotype_subset = genotype_matrix[cis_best_snp_random$dbSNPID,]
+snp_position_subset = snp_positions[cis_best_snp_random$dbSNPID,]
+cis_subset_size_random = nrow(cis_best_snp_random)
+
+me_cis_random = MatrixEQTL_wrapper(genotype_subset, expression_matrix, snp_position_subset, gene_positions, pvThresh = pvOutputThreshold, pvThresh_cis = pvOutputThreshold, cis_dist = cis_dist, covariates = covars)
+
 # Then prepare the GWAS subsetting:
 gwas_subset_dir = paste0(proj_dir, '/Data/Genotype/gtex/imputed_genotypes/allelic_dosage/continuous/subset_SNPs/gwas-subset/')
+
 if (file.exists(paste0(gwas_subset_dir, tissue_name, '_part', part_number, '.txt'))) {
 	gwas_df = read.table(paste0(gwas_subset_dir, tissue_name, '_part', part_number, '.txt'), sep='\t', header=F, stringsAsFactors=F)
-	colnames(gwas_df) = 'snps'
 } else {
-	gwas_df = read.csv('/tigress/BEE/RNAseq/Data/Resources/annotations/gwas_catalog_v1.0.1-associations_e84_r2016-06-12.tsv', sep='\t', header=TRUE, stringsAsFactors=FALSE)
-	gwas_df = gwas_df[(gwas_df$SNPS %in% rownames(genotype_matrix)),]
-
-	# metadata_file = paste('/tigress/BEE/RNAseq/Data/Genotype/gtex/SNP_metadata/GTEx_Analysis_2015-01-12_OMNI_2.5M_5M_450Indiv_allchr_genot_imput.chr',chr_number,'.metadata.expanded.txt',sep='')
-	# snp_metadata = read.table(metadata_file, header=TRUE, stringsAsFactors=FALSE, sep='\t')
-	gwas_snps = vector('list', nrow(gwas_df))
-	for (i in c(1:nrow(gwas_df))) {
-		snp = gwas_df$SNPS[i]
+	gwas_catalogue = read.csv('/tigress/BEE/RNAseq/Data/Resources/annotations/gwas_catalog_v1.0.1-associations_e84_r2016-06-12.tsv', sep='\t', header=TRUE, stringsAsFactors=FALSE)
+	gwas_catalogue = gwas_catalogue[(gwas_catalogue$SNPS %in% rownames(genotype_matrix)),]
+	gwas_snps = vector('list', nrow(gwas_catalogue))
+	for (i in c(1:nrow(gwas_catalogue))) {
+		snp = gwas_catalogue$SNPS[i]
 		if (grepl('chr', snp)) {
 			# key = paste(gwas_df$CHR_ID[i], gwas_df$CHR_POS[i], sep='_')
 			# ind = which(sapply(snp_metadata$ID, function(x) {grepl(key, x)}))
@@ -176,32 +238,79 @@ if (file.exists(paste0(gwas_subset_dir, tissue_name, '_part', part_number, '.txt
 	gwas_snps = unlist(gwas_snps, recursive=T)
 	gwas_snps = gwas_snps[gwas_snps %in% rownames(genotype_matrix)]
 	gwas_snps = unique(gwas_snps)
-	gwas_df = data.frame(snps = gwas_snps)
-	write.table(gwas_df, file = paste0(gwas_subset_dir, tissue_name, '_part', part_number, '.txt'), quote=F, row.names=F, col.names=F)
+	gwas_df = snp_metadata[gwas_snps,]
+	write.table(gwas_df, file = paste0(gwas_subset_dir, tissue_name, '_part', part_number, '.txt'), sep='\t', quote=F, row.names=F)
 }
 
-genotype_subset = genotype_matrix[gwas_df$snps,]
-snp_position_subset = snp_positions[gwas_df$snps,]
+print('gwas-subsetting tests')
+
+genotype_subset = genotype_matrix[gwas_df$dbSNPID,]
+snp_position_subset = snp_positions[gwas_df$dbSNPID,]
 gwas_subset_size = nrow(gwas_df)
 
 me_gwas = MatrixEQTL_wrapper(genotype_subset, expression_matrix, snp_position_subset, gene_positions, pvThresh = pvOutputThreshold, pvThresh_cis = pvOutputThreshold, cis_dist = cis_dist, covariates = covars)
 
-# Then prepare the LD subsetting:
-ld_subset_dir = paste0(proj_dir, '/Data/Genotype/gtex/imputed_genotypes/allelic_dosage/continuous/subset_SNPs/ld-subset/')
-if (file.exists(paste0(ld_subset_dir, tissue_name, '_part', part_number, '.txt'))) {
-	ld_subset_df = read.table(paste0(ld_subset_dir, tissue_name, '_part', part_number, '.txt'), sep='\t', header=F, stringsAsFactors=F)
-	colnames(ld_subset_df) = 'snps'
+# Also get a set of matched random variants
+gwas_subset_dir = paste0(proj_dir, '/Data/Genotype/gtex/imputed_genotypes/allelic_dosage/continuous/subset_SNPs/gwas-subset-random/')
+
+if (file.exists(paste0(gwas_subset_dir, tissue_name, '_part', part_number, '.txt'))) {
+	gwas_df_random = read.table(paste0(gwas_subset_dir, tissue_name, '_part', part_number, '.txt'), sep='\t', header=F, stringsAsFactors=F)
 } else {
-	ld_subset_list = read.table(paste0(ld_subset_dir, 'master/chr', chr_number, '.txt'), header=F, stringsAsFactors=FALSE)
-	ld_subset_list = ld_subset_list[ld_subset_list$V1 %in% rownames(genotype_matrix),'V1']
-	ld_subset_df = data.frame(snps = ld_subset_list)
-	write.table(ld_subset_df, file = paste0(ld_subset_dir, tissue_name, '_part', part_number, '.txt'), quote=F, row.names=F, col.names=F)
+	# selection scheme - for each test SNP, select random SNP that is matched in TSS and MAF, while not being too close to any of the other SNPs
+	gwas_df_random = vector('list', nrow(gwas_df))
+	for (i in c(1:nrow(gwas_df))) {
+		# try to match - let's say 1000 bp and 0.01 in MAF
+		tss_match = which(abs(snp_metadata$TSS - abs(gwas_df$TSS[i])) < 1000)
+		maf_match = which(abs(snp_metadata$MAF - gwas_df$MAF[i]) < 0.01)
+		both_match = intersect(tss_match, maf_match)
+		# if too stringent, relax a little bit
+		if (length(both_match) == 0) {
+			tss_match = which(abs(snp_metadata$TSS - abs(gwas_df$TSS[i])) < 5000)
+			maf_match = which(abs(snp_metadata$MAF - gwas_df$MAF[i]) < 0.03)
+			both_match = intersect(tss_match, maf_match)
+		}
+		# if still too stringent, skip
+		if (length(both_match) == 0) {next}
+		# not in LD with any of the snps being tested - let's say 10000 bp
+		snp_metadata_subset = snp_metadata[both_match,]
+		snp_metadata_subset = snp_metadata_subset[sapply(snp_metadata_subset$POS, function(x) {sum(abs(gwas_df$POS - x) < 10000) == 0}),]
+		# if still too stringent, skip
+		if (nrow(snp_metadata_subset) == 0) {next}
+		# now randomly select
+		set.seed = 42
+		gwas_df_random[[i]] = snp_metadata_subset[sample(nrow(snp_metadata_subset), 1),]
+	}
+
+	gwas_df_random = do.call("rbind", gwas_df_random[!duplicated(sapply(gwas_df_random, function(x) {x$dbSNPID}))])
+	write.table(gwas_df_random, file = paste0(gwas_subset_dir, tissue_name, '_part', part_number, '.txt'), sep='\t', quote=F, row.names=F)
 }
 
-genotype_subset = genotype_matrix[ld_subset_df$snps,]
-snp_position_subset = snp_positions[ld_subset_df$snps,]
-ld_subset_size = nrow(ld_subset_df)
+print('gwas-subsetting tests, matched random')
 
-me_ld = MatrixEQTL_wrapper(genotype_subset, expression_matrix, snp_position_subset, gene_positions, pvThresh = pvOutputThreshold, pvThresh_cis = pvOutputThreshold, cis_dist = cis_dist, covariates = covars)
+genotype_subset = genotype_matrix[gwas_df_random$dbSNPID,]
+snp_position_subset = snp_positions[gwas_df_random$dbSNPID,]
+gwas_subset_size_random = nrow(gwas_df_random)
 
-save(cis_subset_size, me_cis, gwas_subset_size, me_gwas, ld_subset_size, me_ld, file=paste0(out_file, '_part', sprintf("%03d", part_number), '.RData') )
+me_gwas_random = MatrixEQTL_wrapper(genotype_subset, expression_matrix, snp_position_subset, gene_positions, pvThresh = pvOutputThreshold, pvThresh_cis = pvOutputThreshold, cis_dist = cis_dist, covariates = covars)
+
+# # Then prepare the LD subsetting:
+# ld_subset_dir = paste0(proj_dir, '/Data/Genotype/gtex/imputed_genotypes/allelic_dosage/continuous/subset_SNPs/ld-subset/')
+# if (file.exists(paste0(ld_subset_dir, tissue_name, '_part', part_number, '.txt'))) {
+# 	ld_subset_df = read.table(paste0(ld_subset_dir, tissue_name, '_part', part_number, '.txt'), sep='\t', header=F, stringsAsFactors=F)
+# 	colnames(ld_subset_df) = 'snps'
+# } else {
+# 	ld_subset_list = read.table(paste0(ld_subset_dir, 'master/chr', chr_number, '.txt'), header=F, stringsAsFactors=FALSE)
+# 	ld_subset_list = ld_subset_list[ld_subset_list$V1 %in% rownames(genotype_matrix),'V1']
+# 	ld_subset_df = data.frame(snps = ld_subset_list)
+# 	write.table(ld_subset_df, file = paste0(ld_subset_dir, tissue_name, '_part', part_number, '.txt'), quote=F, row.names=F, col.names=F)
+# }
+
+# genotype_subset = genotype_matrix[ld_subset_df$snps,]
+# snp_position_subset = snp_positions[ld_subset_df$snps,]
+# ld_subset_size = nrow(ld_subset_df)
+
+# me_ld = MatrixEQTL_wrapper(genotype_subset, expression_matrix, snp_position_subset, gene_positions, pvThresh = pvOutputThreshold, pvThresh_cis = pvOutputThreshold, cis_dist = cis_dist, covariates = covars)
+
+# save(cis_subset_size, me_cis, gwas_subset_size, me_gwas, ld_subset_size, me_ld, file=paste0(out_file, '_part', sprintf("%03d", part_number), '.RData') )
+
+save(cis_subset_size, cis_subset_size_random, me_cis, me_cis_random, gwas_subset_size, gwas_subset_size_random, me_gwas, me_gwas_random, file=paste0(out_file, '_part', sprintf("%03d", part_number), '.RData') )
