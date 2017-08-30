@@ -1,6 +1,6 @@
-# Gene expression pipeline summary
+# RNA-seq pipeline notebooks
 
-<code>Last updated: 11/20/16</code>
+<code>Last updated: 08/29/17</code>
 
 All the relevant materials pertaining to this site can be found at:
 
@@ -13,8 +13,12 @@ Under this directory, you will find:
 - Output: Includes all processed results of our analyses. Most of the data produced during our progress will belong here
 - Scripts: Includes all scripts used to generate the output, for reference 
 
-I'm writing a series of articles that provide information about different facets of our project.
+I'm writing a series of articles that provide information about different facets of our project, which is located in this directory. These are the project notebooks that I've written so far:
 
+#### genotype directory
+- [1. RNA-seq processing: GTEx Genotypes](./genotype/GTEx_genotype_processing.ipynb)
+
+#### expression directory
 - Updated: 11/10/16 [1. RNA-seq processing: GTEx Genotypes] (genotype/GTEx_genotype_processing.ipynb)
 - Updated: 11/10/16 [2. RNA-seq processing: GTEx exploratory analysis] (expression/GTEx_expression_exploratory_analysis.ipynb)
 -- [Companion notebook with all scripts](http://nbviewer.jupyter.org/gist/bjo/30351d20a4bd3d906229871c5d983b84)
