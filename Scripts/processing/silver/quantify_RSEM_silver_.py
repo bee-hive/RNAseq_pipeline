@@ -17,7 +17,7 @@ tissue = argv[1]
 # tissue = 'ovary'
 
 tables_dir = '/tigress/BEE/RNAseq/Data/Resources/gtex/tables/'
-quant_dir = '/tigress/BEE/gtex/data/phenotype/expression/mapped_rna_seq_reads/silver/RSEM_hg38/'
+quant_dir = '/tigress/BEE/gtex/data/phenotype/expression/quantified_rna_seq_reads/silver/RSEM_hg38/'
 out_dir = '/tigress/BEE/RNAseq/Data/Expression/gtex/hg38/silver/RSEM/'
 gene_suffix = '.genes.results'
 isoform_suffix = '.isoforms.results'
@@ -31,7 +31,6 @@ subjects_without_geno = list(subject_table[subject_table['genotype_avail'] == Fa
 
 samples_with_geno = sample_table[sample_table['submitted_subject_id_s'].isin(subjects_with_geno)]
 samples_without_geno = sample_table[sample_table['submitted_subject_id_s'].isin(subjects_without_geno)]
-isoform_suffix = 'abundance.tsv'
 
 # create table for each tissue
 print(tissue)
@@ -68,8 +67,9 @@ for i in range(len(sample_list)):
     isoform_expr_mat_counts = pd.concat([isoform_expr_mat_counts, isoform_expr_counts], axis=1)
 
 # set row names
-isoform_expr_mat_TPM.index = isoform_table['target_id'].tolist()
-isoform_expr_mat_counts.index = isoform_table['target_id'].tolist()
+transscript_ids = isoform_table['transcript_id'].tolist()
+isoform_expr_mat_TPM.index = isoform_table['transcript_id'].tolist()
+isoform_expr_mat_counts.index = isoform_table['transcript_id'].tolist()
 
 # load transcript annotation
 transcript_anno_file = '/tigress/BEE/RNAseq/Data/Resources/annotations/silver/gencode.v26.transcripts'

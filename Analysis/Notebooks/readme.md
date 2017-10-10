@@ -17,6 +17,7 @@ I'm writing a series of articles that provide information about different facets
 
 #### genotype directory
 - [Genotype processing: GTEx v6p Genotypes](./genotype/GTEx_genotype_processing.ipynb)
+- [Genotype processing: GTEx v8 Genotypes](./genotype/GTEx_v8_genotype_processing.ipynb)
 
 #### expression directory
 - [RNA-seq processing: GTEx v6p Expression Pipeline](./expression/GTEx_expression_exploratory_analysis.ipynb)

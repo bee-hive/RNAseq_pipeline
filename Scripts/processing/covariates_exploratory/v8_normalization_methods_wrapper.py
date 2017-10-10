@@ -26,7 +26,7 @@ tissue_table.index = tissue_table['tissue_name']
 # Only process for tissues with samples over 10
 tissue_table = tissue_table.loc[tissue_table['num_samples'] > 10]
 
-n_factors_array = [10, 20, 30, 40, 50]
+n_factors_array = [500]
 
 methods = argv[1:]
 
@@ -83,10 +83,10 @@ if 'sfamix' in methods:
 #SBATCH -J %s_sfamix      # job name
 #SBATCH -o %s/Scripts/processing/covariates_exploratory/joblogs/qn_%s_%s_sfamix
 #SBATCH --get-user-env
-#SBATCH --mem=35000           # 35 GB requested
+#SBATCH --mem=50000           # 50 GB requested
 #SBATCH -N 1                  # default
 #SBATCH --ntasks-per-node=1   # 1 is default
-#SBATCH -t 24:00:00           # walltime is an argument
+#SBATCH -t 6-00:00           # walltime is an argument
 
 # set default permissions on files created to be group rwx
 umask 002
@@ -113,10 +113,10 @@ umask 002
 #SBATCH -J %s_sfamix      # job name
 #SBATCH -o %s/Scripts/processing/covariates_exploratory/joblogs/log_%s_%s_sfamix
 #SBATCH --get-user-env
-#SBATCH --mem=35000           # 35 GB requested
+#SBATCH --mem=50000           # 50 GB requested
 #SBATCH -N 1                  # default
 #SBATCH --ntasks-per-node=1   # 1 is default
-#SBATCH -t 24:00:00           # walltime is an argument
+#SBATCH -t 6-00:00           # walltime is an argument
 
 # set default permissions on files created to be group rwx
 umask 002
@@ -174,7 +174,7 @@ if 'peer' in methods:
 #SBATCH -J %s_peer      # job name
 #SBATCH -o %s/Scripts/processing/covariates_exploratory/joblogs/qn_%s_%s_peer
 #SBATCH --get-user-env
-#SBATCH --mem=35000           # 35 GB requested
+#SBATCH --mem=50000           # 50 GB requested
 #SBATCH -N 1                  # default
 #SBATCH --ntasks-per-node=1   # 1 is default
 #SBATCH -t 24:00:00           # walltime is an argument
@@ -204,7 +204,7 @@ umask 002
 #SBATCH -J %s_peer      # job name
 #SBATCH -o %s/Scripts/processing/covariates_exploratory/joblogs/log_%s_%s_peer
 #SBATCH --get-user-env
-#SBATCH --mem=35000           # 35 GB requested
+#SBATCH --mem=50000           # 50 GB requested
 #SBATCH -N 1                  # default
 #SBATCH --ntasks-per-node=1   # 1 is default
 #SBATCH -t 24:00:00           # walltime is an argument
