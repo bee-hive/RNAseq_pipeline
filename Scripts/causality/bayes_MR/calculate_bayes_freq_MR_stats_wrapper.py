@@ -19,49 +19,47 @@ proj_dir = os.environ['proj']
 
 expression_input_dir = proj_dir + '/Data/Expression/gtex/hg38/GTEx_Analysis_v8_eQTL_expression_matrices/'
 tissue_list = [x.split('/')[-1].split('.v8')[0] for x in glob.glob(expression_input_dir + '*' + '.v8.normalized_expression.bed.gz')]
-out_dir = proj_dir + '/Output/trans-mapping/gtex/WABF/raw/'
-n_per_run = 10000
+wabf_raw_dir = proj_dir + '/Output/trans-mapping/gtex/WABF/raw/'
 cov_dir = expression_input_dir + 'GTEx_Analysis_v8_eQTL_covariates/'
+out_dir = proj_dir + '/Output/causality/gtex/bayes_MR/raw/'
 
 for tis in tissue_list:
   if not os.path.exists(out_dir + tis):
     os.mkdir(out_dir + tis)
 
-master_script = proj_dir + '/Scripts/causality/bayes_MR/wabf_calculate_bayes_factor.sh'
+master_script = proj_dir + '/Scripts/causality/bayes_MR/calculate_bayes_freq_MR_stats.sh'
 master_handle=open(master_script, 'w')
 master_handle.write("#!/bin/bash\n\n")
 
 for tis in tissue_list:
   input_expr = expression_input_dir + tis + '.v8.normalized_expression.bed.gz'
-  out_file_prefix = out_dir + tis + '/wabf_raw_output_'
-  for i in [str(x+1) for x in range(22)] + ['X']:
-    z = sp.run(['wc', '-l', proj_dir + '/Data/Genotype/gtex/v8/ld_prune/chr' + i + '_MAF_05.in'], stdout = sp.PIPE)
-    n_lines = int(z.stdout.decode("utf-8").split(' ')[0])
-    n_partitions = math.ceil(n_lines / n_per_run)
-    for j in range(n_partitions):
-      sbatchfile = proj_dir + '/Scripts/causality/bayes_MR/batch/wabf_calculate_bayes_factor_' + tis + '_chr' + i + '_part' + str(j+1) + '.slurm'
-      sbatchhandle=open(sbatchfile, 'w')
-      cmd=r"""#!/bin/bash
-#SBATCH -J wabf_%s_%s_%s      # job name
+  wabf_files = glob.glob(wabf_raw_dir + tis + '/' + '*')
+  for f in wabf_files:
+    file_prefix = f.split('wabf_raw_output_')[-1].split('.RData')[0]
+    chr_number = file_prefix.split('_')[0][3:]
+    out_file_prefix = out_dir + tis + '/bayes_freq_MR_stats_' + file_prefix + '_'
+    sbatchfile = proj_dir + '/Scripts/causality/bayes_MR/batch/calculate_bayes_freq_MR_stats_' + tis + '_' + file_prefix + '.slurm'
+    sbatchhandle=open(sbatchfile, 'w')
+    cmd=r"""#!/bin/bash
+#SBATCH -J %s      # job name
 #SBATCH --mem=16000             # 16 GB requested
 #SBATCH -t 24:00:00
-#SBATCH -e /tigress/BEE/RNAseq/Output/trans-mapping/gtex/WABF/joblogs/wabf_calculate_bayes_factor_%s_%s_%s.err           # err output directory
-#SBATCH -o /tigress/BEE/RNAseq/Output/trans-mapping/gtex/WABF/joblogs/wabf_calculate_bayes_factor_%s_%s_%s.out           # out output directory        
+#SBATCH -e /tigress/BEE/RNAseq/Output/causality/gtex/bayes_MR/joblogs/calculate_MR_stats_%s.err           # err output directory
+#SBATCH -o /tigress/BEE/RNAseq/Output/causality/gtex/bayes_MR/joblogs/calculate_MR_stats_%s.out           # out output directory        
 
-Rscript /tigress/BEE/RNAseq//Scripts/causality/bayes_MR/wabf_calculate_bayes_factor.R %s %s %s %s %s %s %s
-"""%(tis, i, str(j+1), tis, i, str(j+1), tis, i, str(j+1), input_expr, i, str(j+1), str(n_per_run), tis, cov_dir, out_file_prefix)
-      sbatchhandle.write(cmd)
-      sbatchhandle.close()
-      master_handle.write("sbatch " + sbatchfile  + " \n")
+Rscript /tigress/BEE/RNAseq/Scripts/causality/bayes_MR/calculate_bayes_freq_MR_stats.R %s %s %s %s %s %s
+"""%(file_prefix, file_prefix, file_prefix, input_expr, f, chr_number, tis, cov_dir, out_file_prefix)
+    sbatchhandle.write(cmd)
+    sbatchhandle.close()
+    master_handle.write("sbatch " + sbatchfile  + " \n")
 
 master_handle.close()
 
 print('sh %s'%(master_script))
 
 # args[1] = '/tigress/BEE/RNAseq/Data/Expression/gtex/hg38/GTEx_Analysis_v8_eQTL_expression_matrices/Whole_Blood.v8.normalized_expression.bed.gz'
-# args[2] = '1'
-# args[3] = '2'
-# args[4] = '100'
-# args[6] = 'Whole_Blood'
-# args[7] = '/tigress/BEE/RNAseq/Data/Expression/gtex/hg38/GTEx_Analysis_v8_eQTL_expression_matrices/GTEx_Analysis_v8_eQTL_covariates/'
-# args[8] = '/tigress/BEE/RNAseq/Output/trans-mapping/gtex/WABF/raw/Whole_Blood/wabf_raw_output_'
+# args[2] = '/tigress/BEE/RNAseq/Output/trans-mapping/gtex/WABF/raw/Whole_Blood/wabf_raw_output_chr10_part1_risk_1.5_pi1_1e-05.RData'
+# args[3] = '10'
+# args[4] = 'Whole_Blood'
+# args[5] = '/tigress/BEE/RNAseq/Data/Expression/gtex/hg38/GTEx_Analysis_v8_eQTL_expression_matrices/GTEx_Analysis_v8_eQTL_covariates/'
+# args[6] = '/tigress/BEE/RNAseq/Output/causality/gtex/bayes_MR/raw/Whole_Blood/bayes_freq_MR_stats_chr10_part1_risk_1.5_pi1_1e-05_'

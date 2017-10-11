@@ -21,13 +21,13 @@ proj_dir = Sys.getenv('proj')
 
 library(MASS)
 # Example
-args = c(1:6)
-args[1] = '/tigress/BEE/RNAseq/Data/Expression/gtex/hg38/GTEx_Analysis_v8_eQTL_expression_matrices/Whole_Blood.v8.normalized_expression.bed.gz'
-args[2] = '/tigress/BEE/RNAseq/Output/trans-mapping/gtex/WABF/raw/Whole_Blood/wabf_raw_output_chr10_part1_risk_1.5_pi1_1e-05.RData'
-args[3] = '10'
-args[4] = 'Whole_Blood'
-args[5] = '/tigress/BEE/RNAseq/Data/Expression/gtex/hg38/GTEx_Analysis_v8_eQTL_expression_matrices/GTEx_Analysis_v8_eQTL_covariates/'
-args[6] = '/tigress/BEE/RNAseq/Output/trans-mapping/gtex/WABF/raw/Whole_Blood/wabf_raw_output_'
+# args = c(1:6)
+# args[1] = '/tigress/BEE/RNAseq/Data/Expression/gtex/hg38/GTEx_Analysis_v8_eQTL_expression_matrices/Whole_Blood.v8.normalized_expression.bed.gz'
+# args[2] = '/tigress/BEE/RNAseq/Output/trans-mapping/gtex/WABF/raw/Whole_Blood/wabf_raw_output_chr10_part1_risk_1.5_pi1_1e-05.RData'
+# args[3] = '10'
+# args[4] = 'Whole_Blood'
+# args[5] = '/tigress/BEE/RNAseq/Data/Expression/gtex/hg38/GTEx_Analysis_v8_eQTL_expression_matrices/GTEx_Analysis_v8_eQTL_covariates/'
+# args[6] = '/tigress/BEE/RNAseq/Output/causality/gtex/bayes_MR/raw/Whole_Blood/bayes_freq_MR_stats_chr10_part1_risk_1.5_pi1_1e-05_'
 
 expression_file_location = args[1]
 # changed feature - geno_option is always continuous by default
@@ -186,13 +186,13 @@ calc_MR_ABF = function(exp_cis, exp_trans, temp_cov, gene_list, W_MR) {
 	H11_ABF = sapply(gene_list, function(x) {(1 / sqrt(det(total_V_11))) * exp(-0.5 * (as.matrix(betas[x,] - total_means) %*% solve(total_V_11) %*% t(as.matrix(betas[x,] - total_means))))})
 
 	return_frame = data.frame(H00_ABF, H01_ABF, H10_ABF, H11_ABF)
-	return_frame$PPA = ((0.01) * H10_ABF + (0.001) * H11_ABF) / (H00_ABF + (0.1) * H01_ABF + (0.01) * H10_ABF + (0.001) * H11_ABF)
+	return_frame$PPA = ((1e-3) * H10_ABF + (1e-7) * H11_ABF) / (H00_ABF + (1e-4) * H01_ABF + (1e-3) * H10_ABF + (1e-7) * H11_ABF)
 	return(return_frame)
 }
 
 # For now, let use the W value of 0.15^2 - roughly translating to 95% chance that the relative risk is between 2/3 and 3/2
 W = (log(1.5)/1.96)^2
-W_MR = (log(1.2)/1.96)^2
+W_MR = (log(1.5)/1.96)^2
 # Say we expect roughly one out of 1e5 SNPs to be eQTLs
 pi_1 = 1e-5
 PO = (1-pi_1)/pi_1
@@ -251,4 +251,4 @@ for (i in c(1:nrow(cis_eqtl_list))) {
 
 out_df = do.call('rbind', MR_stats_list)
 
-save(out_df, file = paste0(out_file, 'chr', chr_number, '_part', part_number, '_risk_', risk, '_pi1_', pi_1, '.RData'))
+save(out_df, file = paste0(out_file, '_trans_risk_1.5_snp_effect_1e-4_gene_effect_1e-3.RData'))
