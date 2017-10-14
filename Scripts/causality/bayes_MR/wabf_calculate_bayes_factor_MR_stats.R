@@ -1,7 +1,7 @@
 ##################################################
-#  calculate_bayes_freq_MR_stats.R
+#  wabf_calculate_bayes_factor_MR_stats.R
 #
-#  $proj/Scripts/causality/bayes_MR/calculate_bayes_freq_MR_stats.R
+#  $proj/Scripts/causality/bayes_MR/wabf_calculate_bayes_factor_MR_stats.R
 # 
 #  This script calculates the MR stats (both frequentist and Bayesian) for SNP-cis-trans trios for the GTEx v8 data.
 #
@@ -21,24 +21,22 @@ proj_dir = Sys.getenv('proj')
 
 library(MASS)
 # Example
-# args = c(1:6)
-# args[1] = '/tigress/BEE/RNAseq/Data/Expression/gtex/hg38/GTEx_Analysis_v8_eQTL_expression_matrices/Whole_Blood.v8.normalized_expression.bed.gz'
-# args[2] = '/tigress/BEE/RNAseq/Output/trans-mapping/gtex/WABF/raw/Whole_Blood/wabf_raw_output_chr10_part1_risk_1.5_pi1_1e-05.RData'
-# args[3] = '10'
-# args[4] = 'Whole_Blood'
-# args[5] = '/tigress/BEE/RNAseq/Data/Expression/gtex/hg38/GTEx_Analysis_v8_eQTL_expression_matrices/GTEx_Analysis_v8_eQTL_covariates/'
-# args[6] = '/tigress/BEE/RNAseq/Output/causality/gtex/bayes_MR/raw/Whole_Blood/bayes_freq_MR_stats_chr10_part1_risk_1.5_pi1_1e-05_'
+# args = c(1:7)
+# args[1] = '/tigress/BEE/RNAseq/Data/Expression/gtex/hg38/GTEx_Analysis_v8_eQTL_expression_matrices/Muscle_Skeletal.v8.normalized_expression.bed.gz'
+# args[2] = '10'
+# args[3] = '1'
+# args[4] = '20000'
+# args[5] = 'Muscle_Skeletal'
+# args[6] = '/tigress/BEE/RNAseq/Data/Expression/gtex/hg38/GTEx_Analysis_v8_eQTL_expression_matrices/GTEx_Analysis_v8_eQTL_covariates/'
+# args[7] = '/tigress/BEE/RNAseq/Output/causality/gtex/bayes_MR/raw/Muscle_Skeletal/bayes_freq_MR_stats'
 
 expression_file_location = args[1]
-# changed feature - geno_option is always continuous by default
-WABF_raw_output_location = args[2]
-chr_number = args[3]
-tissue_name = args[4]
-cov_dir = args[5]
-out_file = args[6]
-
-# Read in the list of cis-eQTLs
-load(WABF_raw_output_location)
+chr_number = args[2]
+part_number = as.numeric(args[3])
+partition_size = as.numeric(args[4])
+tissue_name = args[5]
+cov_dir = args[6]
+out_file = args[7]
 
 # Read in the expression files and the gene positions
 header = readLines(gzfile(expression_file_location), n = 1)
@@ -57,14 +55,26 @@ genotype_file_name = paste0(proj_dir, '/Data/Genotype/gtex/v8/ld_prune/GTEx_Anal
 load(genotype_file_name)
 # This loads in the data frame "genotype_matrix_master"
 
+# Get the appropriate partition
+num_parts = ceiling(nrow(genotype_matrix_master) / partition_size)
+num_inds = ceiling(nrow(genotype_matrix_master) / num_parts)
+if (part_number == num_parts) {
+  genotype_matrix = genotype_matrix_master[c((((part_number-1)*num_inds)+1):nrow(genotype_matrix_master)),]
+} else {
+  genotype_matrix = genotype_matrix_master[c((((part_number-1)*num_inds)+1):(part_number*num_inds)),]
+}
+# There should be 838 indivs for genotype
+
 # Make sure the columns are the same
-expression_matrix = expression_matrix[,(colnames(expression_matrix) %in% colnames(genotype_matrix_master))]
-genotype_matrix = genotype_matrix_master[,sapply(colnames(expression_matrix), function(x) {match(x, colnames(genotype_matrix_master))})]
+expression_matrix = expression_matrix[,(colnames(expression_matrix) %in% colnames(genotype_matrix))]
+genotype_matrix = genotype_matrix[,sapply(colnames(expression_matrix), function(x) {match(x, colnames(genotype_matrix))})]
 
 # Fix the data type
 genotype_matrix_temp = data.frame(lapply(genotype_matrix,as.numeric))
 rownames(genotype_matrix_temp) = rownames(genotype_matrix)
+colnames(genotype_matrix_temp) = colnames(genotype_matrix)
 genotype_matrix = genotype_matrix_temp
+# Fix the genotype matrix colnames
 
 # Get the SNP positions
 snp_positions = data.frame(ID = rownames(genotype_matrix), chr = sapply(rownames(genotype_matrix), function(x) {strsplit(x, '_')[[1]][1]}), pos = as.numeric(sapply(rownames(genotype_matrix), function(x) {strsplit(x, '_')[[1]][2]})))
@@ -87,18 +97,21 @@ center_colmeans = function(x) {
 inv_cov = center_colmeans(inv_cov)
 cov = data.frame(inv_cov)
 
-# Mark the gene locations
-wabf_df = out_df
+# Hack for ASHG - only use v6p samples - remove later!
+v6p_subject_list = read.table('/tigress/BEE/RNAseq/Data/Resources/gtex/genotype/subjects_with_genotypes.txt', stringsAsFactors=F)
+v6p_subject_list = as.character(v6p_subject_list$V1)
 
-wabf_df$gene_chr = gene_positions[as.character(out_df$gene),]$chr
-wabf_df$gene_start = gene_positions[as.character(out_df$gene),]$start
-wabf_df$gene_end = gene_positions[as.character(out_df$gene),]$end
-wabf_df = wabf_df[wabf_df$gene_chr == paste0('chr', chr_number),]
+present = sapply(v6p_subject_list, function(x) {x %in% colnames(genotype_matrix)})
 
-diff = abs(as.numeric(sapply(as.character(wabf_df$snp), function(x) {strsplit(x, '_')[[1]][2]})) - wabf_df$gene_start)
-# Say our cis-threshold is 150 kb
-threshold = 150000
-cis_eqtl_list = wabf_df[diff <= threshold,]
+genotype_matrix = genotype_matrix[,v6p_subject_list[present]]
+expression_matrix = expression_matrix[,v6p_subject_list[present]]
+cov = cov[v6p_subject_list[present],]
+cov = center_colmeans(cov)
+
+# remove covs columns that are not unique
+if (length(unique(cov$pcr)) == 1) {cov = subset(cov, select = -c(ncol(cov)-2))}
+if (length(unique(cov$platform)) == 1) {cov = subset(cov, select = -c(ncol(cov)-1))}
+if (length(unique(cov$sex)) == 1) {cov = subset(cov, select = -c(ncol(cov)))}
 
 # For each row, do the following:
 # Get the list of genes to test for trans-effects - say the threshold is 1 mb
@@ -130,6 +143,17 @@ calc_WABF = function(exp, temp_cov, W, PO, thresh) {
 	# Let's relax the criteria a bit to 0.1 - corresponding to roughly ABF 9e-5
 	return_frame = return_frame[return_frame$PPA >= thresh,]
 	return(return_frame)
+}
+
+# Simpler version only for betas
+calc_betas = function(exp, temp_cov, W, PO, thresh) {
+	# calculate the univariate WABF
+	X = as.matrix(temp_cov)
+	y = as.matrix(exp)
+	Z = solve(t(X) %*% X) %*% t(X) %*% y
+	# strength of association
+	betas = Z[nrow(Z),]
+	return(betas)
 }
 
 calc_freq_MR = function(exp_trans_cands, exp_trans_cands_perm, temp_cov, exp_cis, beta_xz, trans_candidates) {
@@ -194,6 +218,7 @@ calc_MR_ABF = function(exp_cis, exp_trans, temp_cov, gene_list, W_MR, snp_pi_1, 
 
 	return_frame = data.frame(H00_ABF, H01_ABF, H10_ABF, H11_ABF)
 	return_frame$MR_PPA = ((gene_pi_1 * H10_ABF) + (snp_pi_1 * gene_pi_1 * H11_ABF)) / (H00_ABF + (snp_pi_1 * H01_ABF) + (gene_pi_1 * H10_ABF) + (snp_pi_1 * gene_pi_1 * H11_ABF))
+	return_frame = cbind(betas[gene_list,], return_frame)
 	return(return_frame)
 }
 
@@ -209,66 +234,100 @@ PO = (1-pi_1)/pi_1
 snp_pi_1 = 1e-4 # expecting 1 out of ~10000 true trans-eQTLs among chosen cis-eQTLs
 gene_pi_1 = 5e-3 # expecting nonzero contribution in ~100 trans genes
 # trans distance threshold
-threshold = 1000000
+cis_threshold = 150000
+trans_threshold = 1000000
 
+abf_eqtl_list = list()
 MR_stats_list = list()
 
-for (i in c(1:nrow(cis_eqtl_list))) {
-	print(i)
-	snp = as.character(cis_eqtl_list$snp[i])
-	cis_gene = as.character(cis_eqtl_list$gene[i])
+count = 1
+for (i in c(1:nrow(genotype_matrix))) {
+	# for (i in c(1:nrow(cis_eqtl_list))) {
+	snp = rownames(genotype_matrix)[i]
 	# Which genotypes are not NA?
 	inds = !is.na(genotype_matrix[snp,])
 	if (length(unique(as.numeric(genotype_matrix[snp,inds]))) == 1) {next}
 	# Get the expression subset corresponding to available genotypes
-	exp = t(expression_matrix)[as.logical(inds),]
-	# which genes to include for trans analysis?
-	snp_chr = strsplit(snp,'_')[[1]][1]
-	snp_pos = as.numeric(strsplit(snp,'_')[[1]][2])
-	# Get the set of trans genes to test for
-	gene_inds = sapply(c(1:nrow(gene_positions)), function(x) {!(gene_positions[x,'chr'] == snp_chr && abs(gene_positions[x,'start'] - snp_pos) <= threshold)})
-	exp = exp[,gene_inds]
-	exp = center_colmeans(exp)
-	# Permuted version for comparison
-	set.seed(111)
-	exp_perm = exp[sample(nrow(exp)),]
-
-	# Calculate the trans betas and ABF
+	exp_all_genes = t(expression_matrix)[as.logical(inds),]
+	exp_all_genes = center_colmeans(exp_all_genes)
 	temp_cov = cov[inds,]
-	temp_cov$SNP = as.numeric(genotype_matrix[snp,inds])
+	temp_cov$SNP = as.numeric(genotype_matrix[i,inds])
 	# Mean center
 	temp_cov$SNP = temp_cov$SNP - mean(temp_cov$SNP)
+	# Calculate the general WABF
+	eqtl_candidates = calc_WABF(exp_all_genes, temp_cov, W, PO, 0.5)
+  	# save the stats for any associations with PPA over 0.5
+  	if (nrow(eqtl_candidates) == 0) {next}
+    # Record the eQTL candidates
+    eqtl_candidates = cbind(snp, rownames(eqtl_candidates), eqtl_candidates)
+    colnames(eqtl_candidates)[2] = 'gene'
+    eqtl_candidates$gene_chr = gene_positions[as.character(eqtl_candidates$gene),]$chr
+	eqtl_candidates$gene_start = gene_positions[as.character(eqtl_candidates$gene),]$start
+	eqtl_candidates$gene_end = gene_positions[as.character(eqtl_candidates$gene),]$end
+    abf_eqtl_list[[i]] = eqtl_candidates
 
-	# The set of trios to test for - get all trios that have trans-eQTL PPA >= 5 percent
-	trans_candidates = calc_WABF(exp, temp_cov, W, PO, 0.05)
-	if (nrow(trans_candidates) == 0) {next}
+    # Mark the gene locations
+	cis_eqtl_list = abf_eqtl_list[[i]]
+	cis_eqtl_list = cis_eqtl_list[cis_eqtl_list$gene_chr == paste0('chr', chr_number),]
 
-	# Calculate frequentist MR Wald stats
-	exp_cis = t(expression_matrix)[as.logical(inds),cis_gene]
-	exp_trans_cands = exp[,rownames(trans_candidates)]
-	exp_trans_cands_perm = exp_perm[,rownames(trans_candidates)]
-	# Get the trans-betas for MR stats
-	trans_candidates_perm = calc_WABF(exp_trans_cands_perm, temp_cov, W, PO, 0)
-	trans_candidates$betas_perm = sapply(rownames(trans_candidates), function(x) {trans_candidates_perm[x,'betas']})
-	beta_xz = cis_eqtl_list[i,]$beta
-	trans_candidates_MR_stats = calc_freq_MR(exp_trans_cands, exp_trans_cands_perm, temp_cov, exp_cis, beta_xz, trans_candidates)
+	diff = abs(as.numeric(sapply(as.character(cis_eqtl_list$snp), function(x) {strsplit(x, '_')[[1]][2]})) - cis_eqtl_list$gene_start)
+	# Say our cis-threshold is 150 kb
+	cis_eqtl_list = cis_eqtl_list[diff <= cis_threshold,]
 
-	# Calculate Bayesian MR-ABF
-	MR_ABF_df = calc_MR_ABF(exp_cis, exp, temp_cov, rownames(trans_candidates), W_MR, snp_pi_1, gene_pi_1)
-	MR_ABF_df_perm = calc_MR_ABF(exp_cis, exp_perm, temp_cov, rownames(trans_candidates), W_MR, snp_pi_1, gene_pi_1)
+	if (nrow(cis_eqtl_list) == 0) {next}
+	print('cis_eqtl found')
+	print(i)
+	print(nrow(cis_eqtl_list))
+	# If there are cis eqtls to test for:
+	for (j in c(1:nrow(cis_eqtl_list))) {
+		print(count)
+		cis_gene = as.character(cis_eqtl_list$gene[j])
+		# which genes to include for trans analysis?
+		snp_chr = strsplit(snp,'_')[[1]][1]
+		snp_pos = as.numeric(strsplit(snp,'_')[[1]][2])
+		# Get the set of trans genes to test for
+		gene_inds = sapply(c(1:nrow(gene_positions)), function(x) {!(gene_positions[x,'chr'] == snp_chr && abs(gene_positions[x,'start'] - snp_pos) <= trans_threshold)})
+		exp = exp_all_genes[,gene_inds]
+		# exp = center_colmeans(exp)
+		# Permuted version for comparison
+		set.seed(111)
+		exp_perm = exp[sample(nrow(exp)),]
 
-	total_df = cbind(trans_candidates_MR_stats, MR_ABF_df)
-	colnames(MR_ABF_df_perm) = c('H00_ABF_perm', 'H01_ABF_perm', 'H10_ABF_perm', 'H11_ABF_perm', 'MR_PPA_perm')
-	total_df = cbind(total_df, MR_ABF_df_perm)
-	# Add in additional information
-	total_df = cbind(gene_positions[rownames(total_df),], total_df)
-	total_df = cbind(gene_positions[cis_gene,], total_df)
-	total_df = cbind(snp, total_df)
-	colnames(total_df)[c(1:9)] = c('snp', 'cis_gene', 'cis_chr', 'cis_start', 'cis_end', 'trans_gene', 'trans_chr', 'trans_start', 'trans_end')
+		# The set of trios to test for - get all trios that have trans-eQTL PPA >= 5 percent
+		trans_candidates = calc_WABF(exp, temp_cov, W, PO, 0.05)
+		if (nrow(trans_candidates) == 0) {next}
 
-	MR_stats_list[[i]] = total_df
+		# Calculate frequentist MR Wald stats
+		exp_cis = exp_all_genes[,cis_gene]
+		exp_trans_cands = exp[,rownames(trans_candidates)]
+		exp_trans_cands_perm = exp_perm[,rownames(trans_candidates)]
+		# Get the trans-betas for MR stats
+		trans_candidates_perm = calc_betas(exp_trans_cands_perm, temp_cov)
+		trans_candidates$betas_perm = as.numeric(trans_candidates_perm)
+		beta_xz = cis_eqtl_list$betas[j]
+		trans_candidates_MR_stats = calc_freq_MR(exp_trans_cands, exp_trans_cands_perm, temp_cov, exp_cis, beta_xz, trans_candidates)
+
+		# Calculate Bayesian MR-ABF
+		gene_list = rownames(trans_candidates)
+		MR_ABF_df = calc_MR_ABF(exp_cis, exp, temp_cov, gene_list, W_MR, snp_pi_1, gene_pi_1)
+		MR_ABF_df_perm = calc_MR_ABF(exp_cis, exp_perm, temp_cov, gene_list, W_MR, snp_pi_1, gene_pi_1)
+
+		total_df = cbind(trans_candidates_MR_stats, MR_ABF_df)
+		colnames(MR_ABF_df_perm) = c('beta_trans_perm', 'theta_perm', 'H00_ABF_perm', 'H01_ABF_perm', 'H10_ABF_perm', 'H11_ABF_perm', 'MR_PPA_perm')
+		total_df = cbind(total_df, MR_ABF_df_perm)
+		# Add in additional information
+		total_df = cbind(gene_positions[rownames(total_df),], total_df)
+		total_df = cbind(gene_positions[cis_gene,], total_df)
+		total_df = cbind(snp, total_df)
+		colnames(total_df)[c(1:9)] = c('snp', 'cis_gene', 'cis_chr', 'cis_start', 'cis_end', 'trans_gene', 'trans_chr', 'trans_start', 'trans_end')
+
+		MR_stats_list[[count]] = total_df
+		count = count + 1
+	}
 }
 
-out_df = do.call('rbind', MR_stats_list)
+eqtl_out_df = do.call('rbind', abf_eqtl_list)
+mr_out_df = do.call('rbind', MR_stats_list)
 
-save(out_df, file = paste0(out_file, '_trans_risk_', trans_risk, '_snp_effect_', snp_pi_1, '_gene_effect_', gene_pi_1, '.RData'))
+# Save the resulting data frames with the parameter set as file name
+save(eqtl_out_df, mr_out_df, file = paste0(out_file, '_chr_', chr_number, '_part_', part_number, '_cis_risk_', cis_risk, '_pi1_', pi_1,  '_trans_risk_', trans_risk, '_snp_effect_', snp_pi_1, '_gene_effect_', gene_pi_1, '.RData'))
