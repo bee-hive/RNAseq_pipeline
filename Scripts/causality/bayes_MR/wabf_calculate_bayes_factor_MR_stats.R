@@ -146,7 +146,7 @@ calc_WABF = function(exp, temp_cov, W, PO, thresh) {
 }
 
 # Simpler version only for betas
-calc_betas = function(exp, temp_cov, W, PO, thresh) {
+calc_betas = function(exp, temp_cov) {
 	# calculate the univariate WABF
 	X = as.matrix(temp_cov)
 	y = as.matrix(exp)
@@ -182,7 +182,7 @@ calc_freq_MR = function(exp_trans_cands, exp_trans_cands_perm, temp_cov, exp_cis
 }
 
 # TODO: also report the betas
-calc_MR_ABF = function(exp_cis, exp_trans, temp_cov, gene_list, W_MR, snp_pi_1, gene_pi_1) {
+calc_MR_ABF = function(exp_cis, exp_trans, temp_cov, gene_list, beta_xz, W_MR_1, W_MR_2, snp_pi_1, gene_pi_1) {
 	# Calculate the Bayesian MR-ABF
 	# orthogonalize X with respect to genotype
 	X = as.matrix(temp_cov)
@@ -198,26 +198,29 @@ calc_MR_ABF = function(exp_cis, exp_trans, temp_cov, gene_list, W_MR, snp_pi_1, 
 	Z = solve(t(ortho_covs) %*% ortho_covs) %*% t(ortho_covs) %*% exp_trans
 	# strength of association
 	betas = data.frame(beta_trans = Z[(nrow(Z)-1),], theta = Z[nrow(Z),])
+	# scale the trans beta with cis beta for beta IV
+	betas[,1] = betas[,1]/beta_xz
 	# empirical variance V
 	total_V = var(as.matrix(betas))
+	total_V[1,2] = total_V[2,1] = 0
 	# take out the empirical mean? currently just take the zero vector
 	# total_means = colMeans(as.matrix(betas))
 	total_means = as.matrix(c(0,0))
 
 	H00_ABF = sapply(gene_list, function(x) {(1 / sqrt(det(total_V))) * exp(-0.5 * (as.matrix(betas[x,] - total_means) %*% solve(total_V) %*% t(as.matrix(betas[x,] - total_means))))})
 	total_V_01 = total_V
-	total_V_01[1,1] = total_V_01[1,1] + W_MR
+	total_V_01[2,2] = total_V_01[2,2] + W_MR_2
 	H01_ABF = sapply(gene_list, function(x) {(1 / sqrt(det(total_V_01))) * exp(-0.5 * (as.matrix(betas[x,] - total_means) %*% solve(total_V_01) %*% t(as.matrix(betas[x,] - total_means))))})
 	total_V_10 = total_V
-	total_V_10[2,2] = total_V_10[2,2] + W_MR
+	total_V_10[1,1] = total_V_10[1,1] + W_MR_1
 	H10_ABF = sapply(gene_list, function(x) {(1 / sqrt(det(total_V_10))) * exp(-0.5 * (as.matrix(betas[x,] - total_means) %*% solve(total_V_10) %*% t(as.matrix(betas[x,] - total_means))))})
 	total_V_11 = total_V
-	total_V_11[1,1] = total_V_11[1,1] + W_MR
-	total_V_11[2,2] = total_V_11[2,2] + W_MR
+	total_V_11[1,1] = total_V_11[1,1] + W_MR_1
+	total_V_11[2,2] = total_V_11[2,2] + W_MR_2
 	H11_ABF = sapply(gene_list, function(x) {(1 / sqrt(det(total_V_11))) * exp(-0.5 * (as.matrix(betas[x,] - total_means) %*% solve(total_V_11) %*% t(as.matrix(betas[x,] - total_means))))})
 
 	return_frame = data.frame(H00_ABF, H01_ABF, H10_ABF, H11_ABF)
-	return_frame$MR_PPA = ((gene_pi_1 * H10_ABF) + (snp_pi_1 * gene_pi_1 * H11_ABF)) / (H00_ABF + (snp_pi_1 * H01_ABF) + (gene_pi_1 * H10_ABF) + (snp_pi_1 * gene_pi_1 * H11_ABF))
+	return_frame$MR_PPA = ((snp_pi_1 * H10_ABF) + (snp_pi_1 * gene_pi_1 * H11_ABF)) / (H00_ABF + (snp_pi_1 * H10_ABF) + (gene_pi_1 * H01_ABF) + (snp_pi_1 * gene_pi_1 * H11_ABF))
 	return_frame = cbind(betas[gene_list,], return_frame)
 	return(return_frame)
 }
@@ -225,14 +228,16 @@ calc_MR_ABF = function(exp_cis, exp_trans, temp_cov, gene_list, W_MR, snp_pi_1, 
 # For now, let use the W value of 0.15^2 - roughly translating to 95% chance that the relative risk is between 2/3 and 3/2
 cis_risk = 1.5
 W = (log(cis_risk)/1.96)^2
-trans_risk = 1.5
-W_MR = (log(trans_risk)/1.96)^2
+trans_risk_1 = 1.5
+W_MR_1 = (log(trans_risk_1)/1.96)^2
+trans_risk_2 = 1.1
+W_MR_2 = (log(trans_risk_2)/1.96)^2
 # Say we expect roughly one out of 1e5 SNPs to be eQTLs
 pi_1 = 1e-5
 PO = (1-pi_1)/pi_1
 # parameters for MR-ABF
-snp_pi_1 = 1e-4 # expecting 1 out of ~10000 true trans-eQTLs among chosen cis-eQTLs
-gene_pi_1 = 5e-3 # expecting nonzero contribution in ~100 trans genes
+snp_pi_1 = 1e-3 # expecting 1 out of ~10000 true trans-eQTLs among chosen cis-eQTLs
+gene_pi_1 = 1e-3 # expecting nonzero contribution in ~100 trans genes
 # trans distance threshold
 cis_threshold = 150000
 trans_threshold = 1000000
@@ -247,6 +252,9 @@ for (i in c(1:nrow(genotype_matrix))) {
 	# Which genotypes are not NA?
 	inds = !is.na(genotype_matrix[snp,])
 	if (length(unique(as.numeric(genotype_matrix[snp,inds]))) == 1) {next}
+	# Get the SNP MAF
+	snp_maf = sum(as.numeric(genotype_matrix[snp,inds]))/(2*sum(inds))
+	snp_maf = min(snp_maf, 1-snp_maf)
 	# Get the expression subset corresponding to available genotypes
 	exp_all_genes = t(expression_matrix)[as.logical(inds),]
 	exp_all_genes = center_colmeans(exp_all_genes)
@@ -264,6 +272,7 @@ for (i in c(1:nrow(genotype_matrix))) {
     eqtl_candidates$gene_chr = gene_positions[as.character(eqtl_candidates$gene),]$chr
 	eqtl_candidates$gene_start = gene_positions[as.character(eqtl_candidates$gene),]$start
 	eqtl_candidates$gene_end = gene_positions[as.character(eqtl_candidates$gene),]$end
+	eqtl_candidates$snp_maf = snp_maf
     abf_eqtl_list[[i]] = eqtl_candidates
 
     # Mark the gene locations
@@ -309,8 +318,8 @@ for (i in c(1:nrow(genotype_matrix))) {
 
 		# Calculate Bayesian MR-ABF
 		gene_list = rownames(trans_candidates)
-		MR_ABF_df = calc_MR_ABF(exp_cis, exp, temp_cov, gene_list, W_MR, snp_pi_1, gene_pi_1)
-		MR_ABF_df_perm = calc_MR_ABF(exp_cis, exp_perm, temp_cov, gene_list, W_MR, snp_pi_1, gene_pi_1)
+		MR_ABF_df = calc_MR_ABF(exp_cis, exp, temp_cov, gene_list, beta_xz, W_MR_1, W_MR_2, snp_pi_1, gene_pi_1)
+		MR_ABF_df_perm = calc_MR_ABF(exp_cis, exp_perm, temp_cov, gene_list, beta_xz, W_MR_1, W_MR_2, snp_pi_1, gene_pi_1)
 
 		total_df = cbind(trans_candidates_MR_stats, MR_ABF_df)
 		colnames(MR_ABF_df_perm) = c('beta_trans_perm', 'theta_perm', 'H00_ABF_perm', 'H01_ABF_perm', 'H10_ABF_perm', 'H11_ABF_perm', 'MR_PPA_perm')
@@ -320,6 +329,7 @@ for (i in c(1:nrow(genotype_matrix))) {
 		total_df = cbind(gene_positions[cis_gene,], total_df)
 		total_df = cbind(snp, total_df)
 		colnames(total_df)[c(1:9)] = c('snp', 'cis_gene', 'cis_chr', 'cis_start', 'cis_end', 'trans_gene', 'trans_chr', 'trans_start', 'trans_end')
+		total_df$snp_maf = snp_maf
 
 		MR_stats_list[[count]] = total_df
 		count = count + 1
@@ -330,4 +340,4 @@ eqtl_out_df = do.call('rbind', abf_eqtl_list)
 mr_out_df = do.call('rbind', MR_stats_list)
 
 # Save the resulting data frames with the parameter set as file name
-save(eqtl_out_df, mr_out_df, file = paste0(out_file, '_chr_', chr_number, '_part_', part_number, '_cis_risk_', cis_risk, '_pi1_', pi_1,  '_trans_risk_', trans_risk, '_snp_effect_', snp_pi_1, '_gene_effect_', gene_pi_1, '.RData'))
+save(eqtl_out_df, mr_out_df, file = paste0(out_file, '_chr_', chr_number, '_part_', part_number, '_cis_risk_', cis_risk, '_pi1_', pi_1,  '_trans_risk1_', trans_risk_1, '_trans_risk2_', trans_risk_2, '_snp_effect_', snp_pi_1, '_gene_effect_', gene_pi_1, '.RData'))

@@ -31,7 +31,7 @@ master_script = proj_dir + '/Scripts/causality/bayes_MR/wabf_calculate_bayes_fac
 master_handle=open(master_script, 'w')
 master_handle.write("#!/bin/bash\n\n")
 
-tissue_list = ['Adipose_Subcutaneous', 'Skin_Sun_Exposed_Lower_leg', 'Thyroid', 'Whole_Blood']
+tissue_list = ['Muscle_Skeletal', 'Adipose_Subcutaneous', 'Whole_Blood', 'Lung', 'Skin_Sun_Exposed_Lower_leg', 'Thyroid']
 
 for tis in tissue_list:
   input_expr = expression_input_dir + tis + '.v8.normalized_expression.bed.gz'
