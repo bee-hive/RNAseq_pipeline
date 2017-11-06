@@ -14,7 +14,8 @@ import os
 
 proj_dir = os.environ['proj']
 n_factors = 500
-n_itr = 100
+n_itr = 500
+out_itr = 50
 
 master_script = proj_dir + "/Scripts/processing/covariates_exploratory/batch/v8_sfamix_incremental.sh"
 master_handle = open(master_script, 'w')
@@ -44,9 +45,9 @@ for tissue in tissue_list:
 # set default permissions on files created to be group rwx
 umask 002
 
-Rscript %s/Scripts/processing/covariates_exploratory/v8_sfamix_incremental.R %s %s %s %s %s
+Rscript %s/Scripts/processing/covariates_exploratory/v8_sfamix_incremental.R %s %s %s %s %s %s
 
-"""%(tissue, proj_dir, tissue, str(n_factors), proj_dir, exp_dir, directory, tissue, str(n_factors), str(n_itr))
+"""%(tissue, proj_dir, tissue, str(n_factors), proj_dir, exp_dir, directory, tissue, str(n_factors), str(n_itr), str(out_itr))
 	sbatchhandle.write(script)
 	sbatchhandle.close()
 	master_handle.write("sbatch " + sbatchfile + '\n')

@@ -16,16 +16,18 @@ args <-commandArgs(TRUE)
 # output_dir = '/tigress/BEE/RNAseq/Output/processing/exploratory/v8/sfamix/GTEx_Analysis_v8/Adipose_Subcutaneous/'
 # tissue = 'Adipose_Subcutaneous'
 # n_factors = 500
-# n_itr = 100
+# n_itr = 1000
+# out_itr = 50
 
 exp_dir = args[1]
 output_dir = args[2]
 tissue = args[3]
 n_factors = args[4]
 n_itr = args[5]
+out_itr = args[6]
 
 suffix = '.v8.normalized_expression.bed.gz'
-output_file_suffix = paste0('_v8_', n_itr, 'sfamix_output.RData')
+output_file_suffix = paste0('_v8_', n_factors, '_sfamix_output.RData')
 expression_file_location = paste0(exp_dir, tissue, suffix)
 
 header = readLines(gzfile(expression_file_location), n = 1)
@@ -36,6 +38,8 @@ colnames(expression_matrix) = header
 rownames(expression_matrix) = expression_matrix$gene_id
 expression_matrix = expression_matrix[,c(5:ncol(expression_matrix))]
 
-sfamix_result = SFAmixR(y = t(expression_matrix), nf = as.numeric(n_factors), itr = as.numeric(n_itr))
+setwd(output_dir)
+# sfamix_result = SFAmixR(y = t(expression_matrix), nf = as.numeric(n_factors), itr = as.numeric(n_itr), out_itr = as.numeric(out_itr), out_dir = output_dir)
+sfamix_result = SFAmixR(y = t(expression_matrix), nf = as.numeric(n_factors), out_itr = as.numeric(out_itr), out_dir = './')
 
 save(sfamix_result, file = paste0(output_dir, tissue, output_file_suffix))
