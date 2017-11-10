@@ -48,15 +48,18 @@ matrices = glob.glob(in_path + '*' + in_suffix)
 print(len(matrices))
 
 # custom tissue list for now
-tissue_list = ['Whole_Blood', 'Adipose_Subcutaneous', 'Skin_Sun_Exposed_Lower_leg', 'Testis', 'Thyroid', 'Cells_EBV-transformed_lymphocytes']
+tissue_list = ['Adipose_Subcutaneous', 'Skin_Sun_Exposed_Lower_leg', 'Testis', 'Thyroid', 'Cells_EBV-transformed_lymphocytes']
 variants_per_chr = [int(x.strip()) for x in open(proj_dir + '/Data/Genotype/gtex/v8/allelic_dosage/num_snps_per_chr.txt').readlines()]
+
+num_parts_per_chr = [math.ceil(x / int(partition_size)) for x in variants_per_chr]
+print(num_parts_per_chr)
 
 # num_jobs = math.ceil(22 * int(num_split) / int(scripts_per_run))
 
 for tissue in tissue_list:
     filename = in_path + tissue + in_suffix
     out_tissue_dir = out_dir + tissue + '/'
-    summary_dir = out_tissue_dir + '/summary/'
+    summary_dir = out_tissue_dir + 'summary/'
     if not os.path.exists(out_tissue_dir):
         os.makedirs(out_tissue_dir)
     if not os.path.exists(summary_dir):
@@ -65,6 +68,9 @@ for tissue in tissue_list:
         num_parts = math.ceil(variants_per_chr[chr_num] / int(partition_size))
         # Iterate through 22*int(num_split) parts - we will have num_jobs jobs that process int(scripts_per_run) parts each. User can further customize this construction.
         for k in range(num_parts):
+            # check that output exists
+            if os.path.exists(summary_dir + 'chr' + str(chr_num + 1) + '_part' + str(k + 1) + '.RData'):
+                continue
             sbatchfile = proj_dir + '/Scripts/eqtls/trans/gtex/v8_consortium/batch/matrix_eqtl' + Rscript + '_' + tissue + '_chr' + str(chr_num + 1) + '_part' + str(k + 1) + '.slurm'
             job_outfile = 'trans_matrix_eqtl' + Rscript + '_' + tissue + '_chr' + str(chr_num + 1) + '_part' + str(k + 1)
             sbatchhandle=open(sbatchfile, 'w')
