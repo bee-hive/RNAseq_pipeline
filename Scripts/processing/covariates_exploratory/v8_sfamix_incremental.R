@@ -40,6 +40,6 @@ expression_matrix = expression_matrix[,c(5:ncol(expression_matrix))]
 
 setwd(output_dir)
 # sfamix_result = SFAmixR(y = t(expression_matrix), nf = as.numeric(n_factors), itr = as.numeric(n_itr), out_itr = as.numeric(out_itr), out_dir = output_dir)
-sfamix_result = SFAmixR(y = t(expression_matrix), nf = as.numeric(n_factors), out_itr = as.numeric(out_itr), out_dir = './')
+sfamix_result = SFAmixR(y = t(t(expression_matrix)), nf = as.numeric(n_factors), out_itr = as.numeric(out_itr), out_dir = './')
 
 save(sfamix_result, file = paste0(output_dir, tissue, output_file_suffix))
