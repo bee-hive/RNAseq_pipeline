@@ -14,217 +14,63 @@
 # Manually import PATH
 # .libPaths("/home/bj5/R/x86_64-redhat-linux-gnu-library/3.1")
 
-# The first part of the script is identical to the GTEx v8 frequentist eQTL mapping pipeline
-
 args <-commandArgs(TRUE)
 proj_dir = Sys.getenv('proj')
 
-library(MASS)
 # Example
-# args = c(1:7)
-# args[1] = '/tigress/BEE/RNAseq/Data/Expression/gtex/hg38/GTEx_Analysis_v8_eQTL_expression_matrices/Muscle_Skeletal.v8.normalized_expression.bed.gz'
-# args[2] = '10'
-# args[3] = '1'
-# args[4] = '20000'
-# args[5] = 'Muscle_Skeletal'
-# args[6] = '/tigress/BEE/RNAseq/Data/Expression/gtex/hg38/GTEx_Analysis_v8_eQTL_expression_matrices/GTEx_Analysis_v8_eQTL_covariates/'
-# args[7] = '/tigress/BEE/RNAseq/Output/causality/gtex/bayes_MR/raw/Muscle_Skeletal/bayes_freq_MR_stats'
+args = c(1:7)
+args[1] = 'Muscle_Skeletal'
+args[2] = '10'
+args[3] = '1'
+args[4] = '20000'
+args[5] = '/tigress/BEE/RNAseq/Output/causality/gtex/bayes_MR/prep_files/'
+args[6] = '/tigress/BEE/RNAseq/Output/causality/gtex/bayes_MR/raw/Muscle_Skeletal/bayes_freq_MR_stats'
 
-expression_file_location = args[1]
+tissue_name = args[1]
 chr_number = args[2]
 part_number = as.numeric(args[3])
 partition_size = as.numeric(args[4])
-tissue_name = args[5]
-cov_dir = args[6]
-out_file = args[7]
+prep_dir = args[5]
+out_file = args[6]
 
-# Read in the expression files and the gene positions
-header = readLines(gzfile(expression_file_location), n = 1)
-header = strsplit(header, '\t')[[1]]
-expression_matrix = read.csv(gzfile(expression_file_location, 'r'), sep = '\t', stringsAsFactors = FALSE)
+library(MASS)
+source("/tigress/BEE/RNAseq/Scripts/causality/bayes_MR/wabf_functions.R")
+load(paste0(prep_dir, tissue_name, '.RData'))
 
-colnames(expression_matrix) = header
-rownames(expression_matrix) = expression_matrix$gene_id
-
-gene_positions = expression_matrix[,c(4,1,2,3)]
-colnames(gene_positions) = c('gene_id', 'chr', 'start', 'end')
-expression_matrix = expression_matrix[,c(5:ncol(expression_matrix))]
-
-# Read in the genotype positions
+# Read in the genotype positions - both for MAF 1% and 5%
 genotype_file_name = paste0(proj_dir, '/Data/Genotype/gtex/v8/ld_prune/GTEx_Analysis_2017-06-05_v8_WholeGenomeSeq_838Indiv_chr', chr_number, '_MAF_05_ld_pruned.RData')
 load(genotype_file_name)
+genotypes_all = genotype_matrix_master
+genotype_file_name = paste0(proj_dir, '/Data/Genotype/gtex/v8/ld_prune/GTEx_Analysis_2017-06-05_v8_WholeGenomeSeq_838Indiv_chr', chr_number, '_MAF_01_ld_pruned.RData')
+load(genotype_file_name)
+genotypes_all = rbind(genotypes_all, genotype_matrix_master)
 # This loads in the data frame "genotype_matrix_master"
 
 # Get the appropriate partition
-num_parts = ceiling(nrow(genotype_matrix_master) / partition_size)
-num_inds = ceiling(nrow(genotype_matrix_master) / num_parts)
+num_parts = ceiling(nrow(genotypes_all) / partition_size)
+num_inds = ceiling(nrow(genotypes_all) / num_parts)
 if (part_number == num_parts) {
-  genotype_matrix = genotype_matrix_master[c((((part_number-1)*num_inds)+1):nrow(genotype_matrix_master)),]
+  genotype_matrix = genotypes_all[c((((part_number-1)*num_inds)+1):nrow(genotypes_all)),]
 } else {
-  genotype_matrix = genotype_matrix_master[c((((part_number-1)*num_inds)+1):(part_number*num_inds)),]
+  genotype_matrix = genotypes_all[c((((part_number-1)*num_inds)+1):(part_number*num_inds)),]
 }
 # There should be 838 indivs for genotype
-
-# Make sure the columns are the same
-expression_matrix = expression_matrix[,(colnames(expression_matrix) %in% colnames(genotype_matrix))]
-genotype_matrix = genotype_matrix[,sapply(colnames(expression_matrix), function(x) {match(x, colnames(genotype_matrix))})]
 
 # Fix the data type
 genotype_matrix_temp = data.frame(lapply(genotype_matrix,as.numeric))
 rownames(genotype_matrix_temp) = rownames(genotype_matrix)
 colnames(genotype_matrix_temp) = colnames(genotype_matrix)
 genotype_matrix = genotype_matrix_temp
-# Fix the genotype matrix colnames
+
+# match the colnames to expression matrix
+genotype_matrix = genotype_matrix[,colnames(expression_matrix)]
+genotype_matrix_AA = genotype_matrix[,colnames(expression_matrix_AA)]
+genotype_matrix_EA = genotype_matrix[,colnames(expression_matrix_EA)]
 
 # Get the SNP positions
 snp_positions = data.frame(ID = rownames(genotype_matrix), chr = sapply(rownames(genotype_matrix), function(x) {strsplit(x, '_')[[1]][1]}), pos = as.numeric(sapply(rownames(genotype_matrix), function(x) {strsplit(x, '_')[[1]][2]})))
 
-# Load in the covariates
-suffix = '.v8.covariates.txt'
-covars = read.csv(paste0(cov_dir, tissue_name, suffix), header = TRUE, sep = '\t', stringsAsFactors = FALSE)
-colnames(covars) = as.character(sapply(colnames(covars), function(x) {paste(strsplit(x, '\\.')[[1]][1], strsplit(x, '\\.')[[1]][2], sep = '-')}))
-rownames(covars) = covars$ID
-covars = covars[,colnames(expression_matrix)]
-
-# invert and mean-center covars
-inv_cov = t(covars)
-# center with 'colMeans()'
-center_colmeans = function(x) {
-    xcenter = colMeans(x)
-    x - rep(xcenter, rep.int(nrow(x), ncol(x)))
-}
-# apply it
-inv_cov = center_colmeans(inv_cov)
-cov = data.frame(inv_cov)
-
-# Hack for ASHG - only use v6p samples - remove later!
-v6p_subject_list = read.table('/tigress/BEE/RNAseq/Data/Resources/gtex/genotype/subjects_with_genotypes.txt', stringsAsFactors=F)
-v6p_subject_list = as.character(v6p_subject_list$V1)
-
-present = sapply(v6p_subject_list, function(x) {x %in% colnames(genotype_matrix)})
-
-genotype_matrix = genotype_matrix[,v6p_subject_list[present]]
-expression_matrix = expression_matrix[,v6p_subject_list[present]]
-cov = cov[v6p_subject_list[present],]
-cov = center_colmeans(cov)
-
-# remove covs columns that are not unique
-if (length(unique(cov$pcr)) == 1) {cov = subset(cov, select = -c(ncol(cov)-2))}
-if (length(unique(cov$platform)) == 1) {cov = subset(cov, select = -c(ncol(cov)-1))}
-if (length(unique(cov$sex)) == 1) {cov = subset(cov, select = -c(ncol(cov)))}
-
-# For each row, do the following:
-# Get the list of genes to test for trans-effects - say the threshold is 1 mb
-# calculate the betas for SNP-trans gene
-# calculate frequentist MR Wald stats
-# calculate the MR-ABF (Baye factors)
-# Output
-
-# Helper functions
-calc_WABF = function(exp, temp_cov, W, PO, thresh) {
-	# calculate the univariate WABF
-	X = as.matrix(temp_cov)
-	y = as.matrix(exp)
-	Z = solve(t(X) %*% X) %*% t(X) %*% y
-	# strength of association
-	betas = Z[nrow(Z),]
-	# empirical variance V
-	V = var(betas)
-	# shrinkage factor r
-	r = W/(V+W)
-	# Z-statistic
-	Z = betas / sqrt(V)
-	# Approximate Bayes Factor
-	ABF = (1/sqrt(1-r)) * exp(-r*(Z^2)/2)
-	# Posterior probability of association
-	PPA = 1 / (ABF*PO + 1)
-
-	return_frame = data.frame(betas, Z, ABF, PPA)
-	# Let's relax the criteria a bit to 0.1 - corresponding to roughly ABF 9e-5
-	return_frame = return_frame[return_frame$PPA >= thresh,]
-	return(return_frame)
-}
-
-# Simpler version only for betas
-calc_betas = function(exp, temp_cov) {
-	# calculate the univariate WABF
-	X = as.matrix(temp_cov)
-	y = as.matrix(exp)
-	Z = solve(t(X) %*% X) %*% t(X) %*% y
-	# strength of association
-	betas = Z[nrow(Z),]
-	return(betas)
-}
-
-calc_freq_MR = function(exp_trans_cands, exp_trans_cands_perm, temp_cov, exp_cis, beta_xz, trans_candidates) {
-	# calculate the frequentist MR Wald stats
-	X = as.matrix(temp_cov[,c(1:ncol(temp_cov)-1)])
-	g = as.matrix(temp_cov[,ncol(temp_cov)])
-	# orthogonalize w.r.t. covariates
-	res_y = exp_trans_cands - (X %*% solve(t(X) %*% X) %*% t(X) %*% exp_trans_cands)
-	res_y_perm = exp_trans_cands_perm - (X %*% solve(t(X) %*% X) %*% t(X) %*% exp_trans_cands_perm)
-	res_y_cis = exp_cis - (X %*% solve(t(X) %*% X) %*% t(X) %*% exp_cis)
-	res_g = g - (X %*% solve(t(X) %*% X) %*% t(X) %*% g)
-	# Calculate the Wald stats
-	beta_mr = trans_candidates$betas/beta_xz
-	# res_y_cis is the cis-gene expression value - essentially (y-beta*x)^T * (y-beta*x) / (n-3)
-	sig_sq = sapply(c(1:length(beta_mr)), function(n) {t(res_y[,n] - res_y_cis*beta_mr[n]) %*% (res_y[,n] - res_y_cis*beta_mr[n]) / (length(res_g) - 3)})
-	var_beta = sig_sq * as.numeric((t(res_g) %*% res_g) / (t(res_y_cis) %*% res_g)^2)
-	trans_candidates_MR_stats = trans_candidates
-	trans_candidates_MR_stats$MR_Wald = (beta_mr)^2/var_beta
-	# Calculate the Wald stats for permuted
-	beta_mr = trans_candidates$betas_perm/beta_xz
-	sig_sq = sapply(c(1:length(beta_mr)), function(n) {t(res_y_perm[,n] - res_y_cis*beta_mr[n]) %*% (res_y_perm[,n] - res_y_cis*beta_mr[n]) / (length(res_g) - 3)})
-	var_beta = sig_sq * as.numeric((t(res_g) %*% res_g) / (t(res_y_cis) %*% res_g)^2)
-	trans_candidates_MR_stats$MR_Wald_perm = (beta_mr)^2/var_beta
-
-	return(trans_candidates_MR_stats)
-}
-
-# TODO: also report the betas
-calc_MR_ABF = function(exp_cis, exp_trans, temp_cov, gene_list, beta_xz, W_MR_1, W_MR_2, snp_pi_1, gene_pi_1) {
-	# Calculate the Bayesian MR-ABF
-	# orthogonalize X with respect to genotype
-	X = as.matrix(temp_cov)
-	# X[,ncol(X)] is the genotype
-	ortho_covs = X[,c(1:(ncol(X)-1))] - (X[,ncol(X)] %*% solve(t(X[,ncol(X)]) %*% X[,ncol(X)]) %*% t(X[,ncol(X)]) %*% X[,c(1:(ncol(X)-1))])
-	ortho_covs = cbind(ortho_covs, X[,'SNP'])
-	# orthogonalize exp_cis with respect to all covariates
-	exp_cis_ortho = exp_cis - (ortho_covs %*% solve(t(ortho_covs) %*% ortho_covs) %*% t(ortho_covs) %*% exp_cis)
-	ortho_covs = cbind(ortho_covs, exp_cis_ortho)
-	# Add the appropriate column names
-	colnames(ortho_covs) = c(colnames(ortho_covs)[c(1:(ncol(ortho_covs)-2))], c('SNP', 'exp_cis'))
-	# Now solve fit exp_trans jointly with respect to all covariates, genotype, and exp_cis
-	Z = solve(t(ortho_covs) %*% ortho_covs) %*% t(ortho_covs) %*% exp_trans
-	# strength of association
-	betas = data.frame(beta_trans = Z[(nrow(Z)-1),], theta = Z[nrow(Z),])
-	# scale the trans beta with cis beta for beta IV
-	betas[,1] = betas[,1]/beta_xz
-	# empirical variance V
-	total_V = var(as.matrix(betas))
-	total_V[1,2] = total_V[2,1] = 0
-	# take out the empirical mean? currently just take the zero vector
-	# total_means = colMeans(as.matrix(betas))
-	total_means = as.matrix(c(0,0))
-
-	H00_ABF = sapply(gene_list, function(x) {(1 / sqrt(det(total_V))) * exp(-0.5 * (as.matrix(betas[x,] - total_means) %*% solve(total_V) %*% t(as.matrix(betas[x,] - total_means))))})
-	total_V_01 = total_V
-	total_V_01[2,2] = total_V_01[2,2] + W_MR_2
-	H01_ABF = sapply(gene_list, function(x) {(1 / sqrt(det(total_V_01))) * exp(-0.5 * (as.matrix(betas[x,] - total_means) %*% solve(total_V_01) %*% t(as.matrix(betas[x,] - total_means))))})
-	total_V_10 = total_V
-	total_V_10[1,1] = total_V_10[1,1] + W_MR_1
-	H10_ABF = sapply(gene_list, function(x) {(1 / sqrt(det(total_V_10))) * exp(-0.5 * (as.matrix(betas[x,] - total_means) %*% solve(total_V_10) %*% t(as.matrix(betas[x,] - total_means))))})
-	total_V_11 = total_V
-	total_V_11[1,1] = total_V_11[1,1] + W_MR_1
-	total_V_11[2,2] = total_V_11[2,2] + W_MR_2
-	H11_ABF = sapply(gene_list, function(x) {(1 / sqrt(det(total_V_11))) * exp(-0.5 * (as.matrix(betas[x,] - total_means) %*% solve(total_V_11) %*% t(as.matrix(betas[x,] - total_means))))})
-
-	return_frame = data.frame(H00_ABF, H01_ABF, H10_ABF, H11_ABF)
-	return_frame$MR_PPA = ((snp_pi_1 * H10_ABF) + (snp_pi_1 * gene_pi_1 * H11_ABF)) / (H00_ABF + (snp_pi_1 * H10_ABF) + (gene_pi_1 * H01_ABF) + (snp_pi_1 * gene_pi_1 * H11_ABF))
-	return_frame = cbind(betas[gene_list,], return_frame)
-	return(return_frame)
-}
-
+# Parameter settings
 # For now, let use the W value of 0.15^2 - roughly translating to 95% chance that the relative risk is between 2/3 and 3/2
 cis_risk = 1.5
 W = (log(cis_risk)/1.96)^2
@@ -238,17 +84,30 @@ PO = (1-pi_1)/pi_1
 # parameters for MR-ABF
 snp_pi_1 = 1e-3 # expecting 1 out of ~10000 true trans-eQTLs among chosen cis-eQTLs
 gene_pi_1 = 1e-3 # expecting nonzero contribution in ~100 trans genes
-# trans distance threshold
-cis_threshold = 150000
+# trans distance threshold - will set 1Mb for both
+cis_threshold = 1000000
 trans_threshold = 1000000
 
+abf_eqtl_list_AA = list()
+abf_eqtl_list_EA = list()
 abf_eqtl_list = list()
+
 MR_stats_list = list()
 
+# Let's first obtain the list of cis-eQTLs - PPA threshold of 0.5 for cis
+# This task will be divided into EA and AA individuals and processed separately
 count = 1
 for (i in c(1:nrow(genotype_matrix))) {
-	# for (i in c(1:nrow(cis_eqtl_list))) {
 	snp = rownames(genotype_matrix)[i]
+	# which genes are cis?
+	cis_gene_pos = gene_positions[gene_positions$chr == paste0('chr', chr_number),]
+	cis_genes = names(which((sapply(rownames(cis_gene_pos), function(x) {cis_gene_pos[x, 'start'] - cis_threshold <= snp_positions[i,'pos'] && gene_positions[x, 'end'] + cis_threshold >= snp_positions[i,'pos']}))))
+
+	abf_eqtl_list[[i]] = calc_WABF_with_NAs(expression_matrix, cis_genes, genotype_matrix[i,], cov, W, PO)
+	abf_eqtl_list_AA[[i]] = calc_WABF_with_NAs(expression_matrix_AA, cis_genes, genotype_matrix_AA[i,], cov_AA, W, PO)
+	abf_eqtl_list_EA[[i]] = calc_WABF_with_NAs(expression_matrix_EA, cis_genes, genotype_matrix_EA[i,], cov_EA, W, PO)
+
+
 	# Which genotypes are not NA?
 	inds = !is.na(genotype_matrix[snp,])
 	if (length(unique(as.numeric(genotype_matrix[snp,inds]))) == 1) {next}
