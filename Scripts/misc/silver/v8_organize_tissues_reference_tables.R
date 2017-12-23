@@ -32,9 +32,10 @@ sample_table$SUBJID = sapply(sample_table$SAMPID, function(x) {paste(strsplit(x,
 match_ind = as.numeric(sapply(sample_table$SUBJID, function(x) {which(subject_attr$SUBJID == x)}))
 sample_table = cbind(sample_table, subject_attr[match_ind, c('SEX', 'RACE', 'AGE', 'BMI')])
 
-# convert tissue names
+# convert tissue names - update for v8: Now we just remove punctuations, and replace whitespace with underscore
 sample_table$tissue_name = sapply(sample_table$SMTSD, function(x) {gsub("[[:punct:]]", "", x)})
-sample_table$tissue_name = sapply(sample_table$tissue_name, function(x) {tolower(gsub(" ", "", x))})
+# sample_table$tissue_name = sapply(sample_table$tissue_name, function(x) {tolower(gsub(" ", "", x))})
+sample_table$tissue_name = sapply(sample_table$tissue_name, function(x) {gsub(" ", "_", (gsub("  ", " ", x)))})
 
 # sample_table$histology = sapply(sample_table$histological_type_s, function(x) {tolower(gsub(" ", "", x))})
 

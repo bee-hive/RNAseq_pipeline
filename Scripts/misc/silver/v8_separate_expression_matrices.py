@@ -21,12 +21,14 @@ sample_table = proj_dir + '/Data/Resources/gtex/tables/v8/sample_table.txt'
 f = open(sample_table)
 f.readline()
 
-tissue_inds = []
+tissue_samps = []
+tissue_subjs = []
 ind = 0
 for line in f.readlines():
 	samp_tissue = str.split(line.strip(), '\t')[-1]
 	if samp_tissue == tissue:
-		tissue_inds.append(ind)
+		tissue_samps.append(str.split(line, '\t')[0])
+		tissue_subjs.append(str.split(line, '\t')[2])
 	ind = ind + 1
 
 # gene expression files - tpm
@@ -37,26 +39,22 @@ f.readline()
 f.readline()
 
 header = f.readline()
-samples = header.strip().decode("utf-8").split(',')
+samples = header.strip().decode("utf-8").split('\t')
 samples = samples[2:]
 
-tissue_samples = [samples[x] for x in tissue_inds]
-tissue_subjects = [x.split('-')[0] + '-' + x.split('-')[1] for x in tissue_samples]
+tissue_inds = [x for x in range(len(samples)) if samples[x] in tissue_samps]
+tissue_subjects = [samples[x].split('-')[0] + '-' + samples[x].split('-')[1] for x in tissue_inds]
 
 out_file = '/tigress/BEE/gtex/data/phenotype/expression/expression_matrices/v8/raw/v8_RSEMv1.3.0_gene_tpm_' + tissue + '.txt'
 f_out = open(out_file, 'w')
 # write header
-f_out.write('\t'.join(tissue_subjects) + '\n')
+f_out.write('gene\t' + '\t'.join(tissue_subjects) + '\n')
 
 for line in f.readlines():
-	entry = line.strip().decode("utf-8").split('"')
-	if len(entry) > 1:
-		gene = entry[0][:-1]
-		exp_vals = entry[2][1:].split(',')
-	else:
-		entry = entry[0].split(',')
-		gene = entry[0]
-		exp_vals = entry[2:]
+	entry = line.strip().decode("utf-8").split('\t')
+	gene = entry[0]
+	transcripts = entry[1]
+	exp_vals = entry[2:]
 	tissue_vals = [exp_vals[x] for x in tissue_inds]
 	f_out.write(gene + '\t' + '\t'.join(tissue_vals) + '\n')
 
@@ -71,26 +69,22 @@ f.readline()
 f.readline()
 
 header = f.readline()
-samples = header.strip().decode("utf-8").split(',')
+samples = header.strip().decode("utf-8").split('\t')
 samples = samples[2:]
 
-tissue_samples = [samples[x] for x in tissue_inds]
-tissue_subjects = [x.split('-')[0] + '-' + x.split('-')[1] for x in tissue_samples]
+tissue_inds = [x for x in range(len(samples)) if samples[x] in tissue_samps]
+tissue_subjects = [samples[x].split('-')[0] + '-' + samples[x].split('-')[1] for x in tissue_inds]
 
 out_file = '/tigress/BEE/gtex/data/phenotype/expression/expression_matrices/v8/raw/v8_RSEMv1.3.0_gene_count_' + tissue + '.txt'
 f_out = open(out_file, 'w')
 # write header
-f_out.write('\t'.join(tissue_subjects) + '\n')
+f_out.write('gene\t' + '\t'.join(tissue_subjects) + '\n')
 
 for line in f.readlines():
-	entry = line.strip().decode("utf-8").split('"')
-	if len(entry) > 1:
-		gene = entry[0][:-1]
-		exp_vals = entry[2][1:].split(',')
-	else:
-		entry = entry[0].split(',')
-		gene = entry[0]
-		exp_vals = entry[2:]
+	entry = line.strip().decode("utf-8").split('\t')
+	gene = entry[0]
+	transcripts = entry[1]
+	exp_vals = entry[2:]
 	tissue_vals = [exp_vals[x] for x in tissue_inds]
 	f_out.write(gene + '\t' + '\t'.join(tissue_vals) + '\n')
 
@@ -105,51 +99,54 @@ f.readline()
 f.readline()
 
 header = f.readline()
-samples = header.strip().decode("utf-8").split(',')
+samples = header.strip().decode("utf-8").split('\t')
 samples = samples[2:]
 
-tissue_samples = [samples[x] for x in tissue_inds]
-tissue_subjects = [x.split('-')[0] + '-' + x.split('-')[1] for x in tissue_samples]
+tissue_inds = [x for x in range(len(samples)) if samples[x] in tissue_samps]
+tissue_subjects = [samples[x].split('-')[0] + '-' + samples[x].split('-')[1] for x in tissue_inds]
 
 out_file = '/tigress/BEE/gtex/data/phenotype/expression/expression_matrices/v8/raw/v8_RSEMv1.3.0_transcript_tpm_' + tissue + '.txt'
 f_out = open(out_file, 'w')
 # write header
-f_out.write('\t'.join(tissue_subjects) + '\n')
+f_out.write('transcript\tgene\t' + '\t'.join(tissue_subjects) + '\n')
 
 for line in f.readlines():
-	entry = line.strip().decode("utf-8").split(',')
-	gene = entry[0]
+	entry = line.strip().decode("utf-8").split('\t')
+	transcript = entry[0]
+	gene = entry[1]
 	exp_vals = entry[2:]
 	tissue_vals = [exp_vals[x] for x in tissue_inds]
-	f_out.write(gene + '\t' + '\t'.join(tissue_vals) + '\n')
+	f_out.write(transcript + '\t' + gene + '\t' + '\t'.join(tissue_vals) + '\n')
 
 f_out.close()
 
 
 # transcript expression files - counts
-RSEM_transcript_tpm = '/tigress/BEE/gtex/data/phenotype/expression/expression_matrices/v8/dbGaP/GTEx_Analysis_2017-06-05_v8_RSEMv1.3.0_transcript_expected_count.gct.gz'
+RSEM_transcript_count = '/tigress/BEE/gtex/data/phenotype/expression/expression_matrices/v8/dbGaP/GTEx_Analysis_2017-06-05_v8_RSEMv1.3.0_transcript_expected_count.gct.gz'
 
-f = gzip.open(RSEM_transcript_tpm, 'rb')
+f = gzip.open(RSEM_transcript_count, 'rb')
 f.readline()
 f.readline()
 
 header = f.readline()
-samples = header.strip().decode("utf-8").split(',')
+samples = header.strip().decode("utf-8").split('\t')
 samples = samples[2:]
 
-tissue_samples = [samples[x] for x in tissue_inds]
-tissue_subjects = [x.split('-')[0] + '-' + x.split('-')[1] for x in tissue_samples]
+tissue_inds = [x for x in range(len(samples)) if samples[x] in tissue_samps]
+tissue_subjects = [samples[x].split('-')[0] + '-' + samples[x].split('-')[1] for x in tissue_inds]
 
 out_file = '/tigress/BEE/gtex/data/phenotype/expression/expression_matrices/v8/raw/v8_RSEMv1.3.0_transcript_count_' + tissue + '.txt'
 f_out = open(out_file, 'w')
 # write header
-f_out.write('\t'.join(tissue_subjects) + '\n')
+f_out.write('transcript\tgene\t' + '\t'.join(tissue_subjects) + '\n')
 
 for line in f.readlines():
-	entry = line.strip().decode("utf-8").split(',')
-	gene = entry[0]
+	entry = line.strip().decode("utf-8").split('\t')
+	transcript = entry[0]
+	gene = entry[1]
 	exp_vals = entry[2:]
 	tissue_vals = [exp_vals[x] for x in tissue_inds]
-	f_out.write(gene + '\t' + '\t'.join(tissue_vals) + '\n')
+	f_out.write(transcript + '\t' + gene + '\t' + '\t'.join(tissue_vals) + '\n')
 
 f_out.close()
+
